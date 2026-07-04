@@ -1,0 +1,23 @@
+{
+  "Modules": {
+    "ALPRYOLO11": {
+      // Linux runs the same Python 3.10 runtime as the base/Windows settings.
+      "LaunchSettings": {
+        "Runtime": "python3.10"
+      },
+      // On Linux the ONNX Runtime is onnxruntime-gpu (CUDA), NOT DirectML. Turn
+      // DirectML off so the provider auto-detection goes straight to CUDA and we
+      // don't log a spurious "DirectML requested but not available" on every session.
+      "EnvironmentVariables": {
+        "USE_ONNX"     : "True",
+        "USE_CUDA"     : "True",
+        "USE_DIRECTML" : "False"
+      },
+      "GpuOptions": {
+        "InstallGPU"    : true,
+        "EnableGPU"     : true,
+        "HalfPrecision" : "enable"
+      }
+    }
+  }
+}

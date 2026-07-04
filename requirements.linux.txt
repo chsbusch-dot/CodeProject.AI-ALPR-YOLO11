@@ -1,0 +1,21 @@
+#! Python3.10
+
+# Essential dependencies for ALPR module
+numpy>=1.23.0,<=2.1.1          # Installing NumPy, a package for scientific computing
+opencv-python>=4.6.0           # Installing OpenCV, the Open source Computer Vision library
+
+# ONNX Runtime with CUDA for NVIDIA GPU on Linux.
+#
+# The base requirements.txt installs onnxruntime-directml, which is Windows-only and
+# has no Linux wheel, so the module cannot install on Linux without this override.
+#
+# Since onnxruntime-gpu 1.19 the DEFAULT PyPI wheel targets CUDA 12 (no special index
+# needed), but the CUDA/cuDNN runtime libraries are optional extras. onnxruntime-gpu
+# 1.23 needs cuDNN 9, which many CUDA 12 base images do not ship (they carry cuDNN 8).
+# The [cuda,cudnn] extras pull a matching CUDA 12 runtime + cuDNN 9 into this module's
+# venv, so the CUDAExecutionProvider loads regardless of the host/image system libs.
+onnxruntime-gpu[cuda,cudnn]==1.23.0   # ONNX Runtime, CUDA 12 + bundled cuDNN 9 for Linux/NVIDIA
+
+CodeProject-AI-SDK             # Installing the CodeProject.AI SDK
+
+# last line empty.
