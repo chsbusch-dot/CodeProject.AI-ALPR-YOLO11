@@ -53,7 +53,20 @@ class ONNXSessionManager:
         
         # Keep track of available providers
         self._available_providers = ort.get_available_providers()
-        
+
+        # onnxruntime-gpu >= 1.19 ships CUDA/cuDNN as pip packages (nvidia-*-cu12) instead
+        # of relying on system libraries. On Linux the dynamic loader does not find them
+        # automatically, so the CUDAExecutionProvider fails to load with
+        # "libcudnn.so.9: cannot open shared object file" and silently falls back to CPU.
+        # preload_dlls() loads the pip-installed CUDA/cuDNN libraries up front so the
+        # provider can initialise. Harmless no-op on Windows/DirectML and on onnxruntime
+        # builds that predate this helper.
+        if 'CUDAExecutionProvider' in self._available_providers and hasattr(ort, 'preload_dlls'):
+            try:
+                ort.preload_dlls()
+            except Exception as e:
+                print(f"onnxruntime preload_dlls skipped: {e}")
+
         print(f"ONNX Session Manager initialized. Available providers: {self._available_providers}")
     
     def create_session(self, config: SessionConfig) -> str:
