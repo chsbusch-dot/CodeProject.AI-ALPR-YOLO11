@@ -205,6 +205,97 @@ class ALPRSystem:
         
         return plate_result
     
+    def _maybe_vehicle_crop_fallback(self, image: np.ndarray,
+                                     plate_detection: Dict[str, Any]) -> Dict[str, Any]:
+        """If the full-frame pass found no plates, try the vehicle-crop fallback.
+
+        Wide / high-resolution (4K) scenes shrink a plate below the plate
+        detector's fixed input size, so it is missed on the full frame even
+        though it is legible. Cropping the vehicle first keeps the plate large
+        enough to detect. Returns the fallback plates if any were found,
+        otherwise the original (empty) detection.
+        """
+        if not self.config.enable_vehicle_crop_fallback:
+            return plate_detection
+        if plate_detection.get("day_plates") or plate_detection.get("night_plates"):
+            return plate_detection
+        fallback = self._detect_plates_via_vehicle_crops(image)
+        if fallback["day_plates"] or fallback["night_plates"]:
+            return fallback
+        return plate_detection
+
+    def _detect_vehicles(self, image: np.ndarray) -> List[Tuple[int, int, int, int]]:
+        """Return vehicle bounding boxes (x1, y1, x2, y2) from an external
+        object-detection module, largest first."""
+        import requests
+        ok, buf = cv2.imencode(".jpg", image)
+        if not ok:
+            return []
+        resp = requests.post(
+            self.config.object_detection_url,
+            files={"image": ("frame.jpg", buf.tobytes(), "image/jpeg")},
+            timeout=30,
+        )
+        preds = resp.json().get("predictions", []) or []
+        labels = set(self.config.vehicle_crop_labels)
+        min_conf = self.config.vehicle_crop_confidence
+        boxes = [
+            (int(p["x_min"]), int(p["y_min"]), int(p["x_max"]), int(p["y_max"]))
+            for p in preds
+            if p.get("label") in labels and float(p.get("confidence", 0)) >= min_conf
+        ]
+        boxes.sort(key=lambda b: -((b[2] - b[0]) * (b[3] - b[1])))
+        return boxes
+
+    @staticmethod
+    def _offset_plate(plate: Dict[str, Any], ox: int, oy: int) -> None:
+        """Translate a plate's geometry from crop coords to full-frame coords."""
+        def shift(points):
+            return [[float(pt[0]) + ox, float(pt[1]) + oy] for pt in points]
+        if plate.get("corners") is not None:
+            plate["corners"] = shift(plate["corners"])
+        if plate.get("original_corners") is not None:
+            plate["original_corners"] = shift(plate["original_corners"])
+        if plate.get("detection_box") is not None:
+            b = plate["detection_box"]
+            plate["detection_box"] = [b[0] + ox, b[1] + oy, b[2] + ox, b[3] + oy]
+
+    def _detect_plates_via_vehicle_crops(self, image: np.ndarray) -> Dict[str, List[Dict[str, Any]]]:
+        """Crop each detected vehicle and run plate detection on the crop,
+        translating any plates found back to full-frame coordinates."""
+        result: Dict[str, List[Dict[str, Any]]] = {"day_plates": [], "night_plates": []}
+        try:
+            vehicles = self._detect_vehicles(image)
+        except Exception as e:
+            print(f"vehicle-crop fallback: object detection failed: {e}")
+            return result
+        if not vehicles:
+            return result
+        H, W = image.shape[:2]
+        pad = self.config.vehicle_crop_padding
+        for (x1, y1, x2, y2) in vehicles[: self.config.max_vehicle_crops]:
+            dw, dh = int((x2 - x1) * pad), int((y2 - y1) * pad)
+            cx1, cy1 = max(0, x1 - dw), max(0, y1 - dh)
+            cx2, cy2 = min(W, x2 + dw), min(H, y2 + dh)
+            # Whole vehicle first, then a tighter lower region (plates usually sit
+            # low on the vehicle) which zooms the plate further for a hard read.
+            lower_y1 = max(0, y1 + int((y2 - y1) * 0.45) - dh)
+            crop_boxes = [(cx1, cy1, cx2, cy2), (cx1, lower_y1, cx2, cy2)]
+            found = False
+            for (bx1, by1, bx2, by2) in crop_boxes:
+                crop = image[by1:by2, bx1:bx2]
+                if crop.size == 0:
+                    continue
+                det = self.plate_detector.detect(crop)
+                for ptype in ("day_plates", "night_plates"):
+                    for plate in det.get(ptype, []):
+                        self._offset_plate(plate, bx1, by1)
+                        result[ptype].append(plate)
+                        found = True
+                if found:
+                    break
+        return result
+
     def process_image(self, image: np.ndarray) -> Dict[str, Any]:
         """
         Process an image to detect and recognize license plates, vehicle make/model.
@@ -222,6 +313,7 @@ class ALPRSystem:
 
         # Detect license plates in the image
         plate_detection = self.detect_license_plates(image_copy)
+        plate_detection = self._maybe_vehicle_crop_fallback(image_copy, plate_detection)
 
         # Initialize results
         results = {
@@ -310,7 +402,7 @@ class ALPRSystem:
 
         # Process the image to find license plates
         plate_detection = self.detect_license_plates(image_np)
-        # plate_detection = self.detect_license_plates(image_np)
+        plate_detection = self._maybe_vehicle_crop_fallback(image_np, plate_detection)
 
         # Process each plate
         results = {

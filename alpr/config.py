@@ -4,7 +4,7 @@ Handles loading and validating configuration from environment variables and file
 """
 import os
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 from codeproject_ai_sdk import ModuleOptions
 
 @dataclass
@@ -52,7 +52,19 @@ class ALPRConfig:
     
     # Model format (always ONNX)
     onnx_models_dir: str = field(default_factory=lambda: os.path.normpath(os.path.join(os.getcwd(), "models")))
-    
+
+    # Vehicle-crop fallback for wide / high-resolution (4K) scenes. When plate
+    # detection on the full frame finds nothing, ask a general object-detection
+    # module for vehicles, crop each one, and re-run plate detection on the crop
+    # (the plate keeps its pixels through the detector's fixed input size). See
+    # core.py. Requires an object-detection module reachable at object_detection_url.
+    enable_vehicle_crop_fallback: bool = True
+    object_detection_url: str = "http://localhost:32168/v1/vision/detection"
+    vehicle_crop_labels: Tuple[str, ...] = ("car", "truck", "bus", "motorcycle", "motorbike")
+    vehicle_crop_confidence: float = 0.25
+    max_vehicle_crops: int = 3
+    vehicle_crop_padding: float = 0.12
+
     # Derived properties
     _model_paths: Dict[str, str] = field(default_factory=dict, init=False)
     
@@ -244,7 +256,14 @@ def load_from_env() -> ALPRConfig:
     
     # Model format (always ONNX)
     onnx_models_dir = os.path.normpath(ModuleOptions.getEnvVariable("ONNX_MODELS_DIR", f"{app_dir}/models"))
-    
+
+    # Vehicle-crop fallback (wide / 4K scenes)
+    enable_vehicle_crop_fallback = ModuleOptions.getEnvVariable("ENABLE_VEHICLE_CROP_FALLBACK", "True").lower() == "true"
+    object_detection_url = ModuleOptions.getEnvVariable("OBJECT_DETECTION_URL", "http://localhost:32168/v1/vision/detection")
+    vehicle_crop_confidence = float(ModuleOptions.getEnvVariable("VEHICLE_CROP_CONFIDENCE", "0.25"))
+    max_vehicle_crops = int(ModuleOptions.getEnvVariable("MAX_VEHICLE_CROPS", "3"))
+    vehicle_crop_padding = float(ModuleOptions.getEnvVariable("VEHICLE_CROP_PADDING", "0.12"))
+
     return ALPRConfig(
         app_dir=app_dir,
         models_dir=models_dir,
@@ -272,5 +291,10 @@ def load_from_env() -> ALPRConfig:
         use_cuda=use_cuda,
         use_mps=use_mps,
         use_directml=use_directml,
-        onnx_models_dir=onnx_models_dir
+        onnx_models_dir=onnx_models_dir,
+        enable_vehicle_crop_fallback=enable_vehicle_crop_fallback,
+        object_detection_url=object_detection_url,
+        vehicle_crop_confidence=vehicle_crop_confidence,
+        max_vehicle_crops=max_vehicle_crops,
+        vehicle_crop_padding=vehicle_crop_padding
     )
