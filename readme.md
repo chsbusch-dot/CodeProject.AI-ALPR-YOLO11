@@ -1,3 +1,8 @@
+> **This is a fork of [MikeLud's YOLO11 ALPR](https://github.com/MikeLud/CodeProject.AI-ALPR-YOLO11)** — for the original (the canonical Windows/DirectML version), go there. This fork adds a **Linux/CUDA (`onnxruntime-gpu`) patch** ([upstream PR #2](https://github.com/MikeLud/CodeProject.AI-ALPR-YOLO11/pull/2)).
+> Comparing the CodeProject.AI ALPR options? See the guide in **[ALPRFast](https://github.com/chsbusch-dot/CodeProject.AI-ALPRFast#which-codeprojectai-alpr-module-should-i-use)**.
+
+---
+
 # Automatic License Plate Recognition (ALPR) Module for CodeProject.AI Server
 
 This is an Automatic License Plate Recognition (ALPR) module for [CodeProject.AI Server](https://www.codeproject.com/Articles/5322557/CodeProject-AI-Server-AI-the-easy-way). The module can detect license plates in images, recognize characters, identify states, and detect vehicles with make/model classifications.
